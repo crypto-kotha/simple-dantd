@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-# Automated Dante (danted) SOCKS5 proxy setup
-# Auto-detects server IP and interface; prompts only for allowed clients
-# This script supports Debian/Ubuntu (apt) and RHEL/CentOS/Rocky/Alma (yum/dnf) families.
-# It will:
-#  - Install Dante server
-#  - Detect the correct network interface automatically
-#  - Write /etc/danted.conf with your access rules
-#  - Configure/ensure a systemd unit
-#  - Open firewall (ufw or firewalld if present) for port 1080 limited to allowed subnets
-#  - Enable and start the service
 
 set -euo pipefail
 
@@ -22,118 +12,119 @@ ALLOWED_CLIENTS=(
   "37.111.0.0/16"
   "103.112.0.0/16"
   "182.160.0.0/16"
-  "103.189.237.0/24"
-  "103.228.38.0/23"
+  "103.189.237.0/16"
+  "103.228.38.0/16"
+  "163.223.0.0./16"
 )
 
 need_root() {
-  if [[ $(id -u) -ne 0 ]]; then
-    echo "This script must be run as root" >&2
-    exit 1
-  fi
+ if [[ $(id -u) -ne 0 ]]; then
+   echo "This script must be run as root" >&2
+   exit 1
+ fi
 }
 
 # Validate simple IPv4 format
 is_ipv4() {
-  local ip="$1"
-  [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
+ local ip="$1"
+ [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
 }
 
 # Try to detect public IPv4 using multiple services
 detect_public_ip() {
-  local ip=""
-  if cmd_exists curl; then
-    ip=$(curl -4 -sS --max-time 5 https://ifconfig.me || true)
-    is_ipv4 "$ip" || ip=$(curl -4 -sS --max-time 5 https://icanhazip.com || true)
-    is_ipv4 "$ip" || ip=$(curl -4 -sS --max-time 5 https://ipinfo.io/ip || true)
-    is_ipv4 "$ip" || ip=$(curl -4 -sS --max-time 5 http://ipecho.net/plain || true)
-  fi
-  if ! is_ipv4 "$ip" && cmd_exists wget; then
-    ip=$(wget -qO- --timeout=5 --inet4-only https://ifconfig.me || true)
-    is_ipv4 "$ip" || ip=$(wget -qO- --timeout=5 --inet4-only https://icanhazip.com || true)
-    is_ipv4 "$ip" || ip=$(wget -qO- --timeout=5 --inet4-only https://ipinfo.io/ip || true)
-    is_ipv4 "$ip" || ip=$(wget -qO- --timeout=5 --inet4-only http://ipecho.net/plain || true)
-  fi
-  if is_ipv4 "$ip"; then
-    echo "$ip"
-    return 0
-  fi
-  return 1
+ local ip=""
+ if cmd_exists curl; then
+   ip=$(curl -4 -sS --max-time 5 https://ifconfig.me || true)
+   is_ipv4 "$ip" || ip=$(curl -4 -sS --max-time 5 https://icanhazip.com || true)
+   is_ipv4 "$ip" || ip=$(curl -4 -sS --max-time 5 https://ipinfo.io/ip || true)
+   is_ipv4 "$ip" || ip=$(curl -4 -sS --max-time 5 http://ipecho.net/plain || true)
+ fi
+ if ! is_ipv4 "$ip" && cmd_exists wget; then
+   ip=$(wget -qO- --timeout=5 --inet4-only https://ifconfig.me || true)
+   is_ipv4 "$ip" || ip=$(wget -qO- --timeout=5 --inet4-only https://icanhazip.com || true)
+   is_ipv4 "$ip" || ip=$(wget -qO- --timeout=5 --inet4-only https://ipinfo.io/ip || true)
+   is_ipv4 "$ip" || ip=$(wget -qO- --timeout=5 --inet4-only http://ipecho.net/plain || true)
+ fi
+ if is_ipv4 "$ip"; then
+   echo "$ip"
+   return 0
+ fi
+ return 1
 }
 
 cmd_exists() { command -v "$1" >/dev/null 2>&1; }
 
 install_dante() {
-  if cmd_exists apt-get; then
-    apt-get update -y
-    # Package names can be dante-server or danted; prefer dante-server on Debian/Ubuntu
-    if apt-cache show dante-server >/dev/null 2>&1; then
-      apt-get install -y dante-server
-    else
-      apt-get install -y danted || true
-    fi
-  elif cmd_exists dnf; then
-    dnf install -y epel-release || true
-    dnf install -y dante-server || dnf install -y danted || true
-  elif cmd_exists yum; then
-    yum install -y epel-release || true
-    yum install -y dante-server || yum install -y danted || true
-  else
-    echo "Unsupported OS: need apt, dnf or yum." >&2
-    exit 1
-  fi
+ if cmd_exists apt-get; then
+   apt-get update -y
+   # Package names can be dante-server or danted; prefer dante-server on Debian/Ubuntu
+   if apt-cache show dante-server >/dev/null 2>&1; then
+     apt-get install -y dante-server
+   else
+     apt-get install -y danted || true
+   fi
+ elif cmd_exists dnf; then
+   dnf install -y epel-release || true
+   dnf install -y dante-server || dnf install -y danted || true
+ elif cmd_exists yum; then
+   yum install -y epel-release || true
+   yum install -y dante-server || yum install -y danted || true
+ else
+   echo "Unsupported OS: need apt, dnf or yum." >&2
+   exit 1
+ fi
 }
 
 ensure_utils() {
-  # Ensure curl exists for connectivity test
-  if ! cmd_exists curl; then
-    if cmd_exists apt-get; then
-      apt-get update -y && apt-get install -y curl
-    elif cmd_exists dnf; then
-      dnf install -y curl || true
-    elif cmd_exists yum; then
-      yum install -y curl || true
-    fi
-  fi
+ # Ensure curl exists for connectivity test
+ if ! cmd_exists curl; then
+   if cmd_exists apt-get; then
+     apt-get update -y && apt-get install -y curl
+   elif cmd_exists dnf; then
+     dnf install -y curl || true
+   elif cmd_exists yum; then
+     yum install -y curl || true
+   fi
+ fi
 }
 
 get_iface() {
-  local iface=""
-  if [[ -n "$REQUIRED_IP" ]]; then
-    if ip -o addr show | grep -q "${REQUIRED_IP}\\b"; then
-      iface=$(ip -o addr show | awk -v ip="${REQUIRED_IP}" '$0 ~ ip {print $2; exit}')
-    fi
-  fi
-  if [[ -z "$iface" ]]; then
-    # Default route interface
-    iface=$(ip route get 1.1.1.1 | awk '/dev/ {for (i=1;i<=NF;i++) if ($i=="dev") print $(i+1)}' | head -n1)
-  fi
-  if [[ -z "$iface" ]]; then
-    echo "Unable to determine network interface." >&2
-    exit 1
-  fi
-  echo "$iface"
+ local iface=""
+ if [[ -n "$REQUIRED_IP" ]]; then
+   if ip -o addr show | grep -q "${REQUIRED_IP}\\b"; then
+     iface=$(ip -o addr show | awk -v ip="${REQUIRED_IP}" '$0 ~ ip {print $2; exit}')
+   fi
+ fi
+ if [[ -z "$iface" ]]; then
+   # Default route interface
+   iface=$(ip route get 1.1.1.1 | awk '/dev/ {for (i=1;i<=NF;i++) if ($i=="dev") print $(i+1)}' | head -n1)
+ fi
+ if [[ -z "$iface" ]]; then
+   echo "Unable to determine network interface." >&2
+   exit 1
+ fi
+ echo "$iface"
 }
 
 get_primary_ip_for_iface() {
-  local iface="$1"
-  ip -4 -o addr show dev "$iface" scope global | awk '{print $4}' | cut -d/ -f1 | head -n1
+ local iface="$1"
+ ip -4 -o addr show dev "$iface" scope global | awk '{print $4}' | cut -d/ -f1 | head -n1
 }
 
 backup_file() {
-  local file="$1"
-  if [[ -f "$file" ]]; then
-    cp -a "$file" "${file}.bak.$(date +%s)"
-  fi
+ local file="$1"
+ if [[ -f "$file" ]]; then
+   cp -a "$file" "${file}.bak.$(date +%s)"
+ fi
 }
 
 write_config() {
-  local iface="$1"
-  backup_file "$CONF"
-  # Remove old config if present to redeploy cleanly
-  rm -f "$CONF" || true
+ local iface="$1"
+ backup_file "$CONF"
+ # Remove old config if present to redeploy cleanly
+ rm -f "$CONF" || true
 
-  cat > "$CONF" <<EOF
+ cat > "$CONF" <<EOF
 # Auto-generated by setup.sh at $(date -Is)
 # Log output
 logoutput: syslog
@@ -144,10 +135,9 @@ internal: ${iface} port = ${PORT}
 external: ${iface}
 
 # Authentication methods
-# Replace deprecated 'method' with modern directives
-# 'socksmethod' applies to SOCKS authentication; 'clientmethod' to client connection acceptance
-# No-auth SOCKS; restrict access via client ACLs and firewall
-socksmethod: none
+# 'socksmethod: username' enforces system user/password auth
+# 'clientmethod' controls acceptance of the TCP connection to the daemon
+socksmethod: username
 clientmethod: none
 
 # Define user privileges
@@ -156,45 +146,75 @@ user.unprivileged: nobody
 
 # Client access rules
 $(for subnet in "${ALLOWED_CLIENTS[@]}"; do
-  cat <<R
+ cat <<R
 client pass {
-    from: ${subnet} to: 0.0.0.0/0
-    log: connect disconnect
+   from: ${subnet} to: 0.0.0.0/0
+   log: connect disconnect
 }
 R
 done)
 
 # Block everyone else
 client block {
-    from: 0.0.0.0/0 to: 0.0.0.0/0
-    log: connect disconnect
+   from: 0.0.0.0/0 to: 0.0.0.0/0
+   log: connect disconnect
 }
 
 # SOCKS rules
 $(for subnet in "${ALLOWED_CLIENTS[@]}"; do
-  cat <<R
+ cat <<R
 socks pass {
-    from: ${subnet} to: 0.0.0.0/0
-    command: bind connect udpassociate
-    log: connect disconnect
+   from: ${subnet} to: 0.0.0.0/0
+   command: bind connect udpassociate
+   log: connect disconnect
 }
 R
 done)
 
 # Block all other SOCKS requests
 socks block {
-    from: 0.0.0.0/0 to: 0.0.0.0/0
-    log: connect disconnect
+   from: 0.0.0.0/0 to: 0.0.0.0/0
+   log: connect disconnect
 }
 EOF
 }
 
-ensure_unit() {
-  # Many distros install a unit already; only write our own if missing.
-  if systemctl list-unit-files | grep -q '^danted\.service'; then
-    return 0
+create_proxy_user() {
+  # Create/update a system user for Dante username/password authentication
+  local user pass
+  if [[ -t 0 && -t 1 ]]; then
+    read -r -p "Enter proxy username (default: user1): " user || true
+    user=${user:-user1}
+    read -r -s -p "Enter proxy password for '$user' (default: 1234): " pass || true
+    echo
+    pass=${pass:-1234}
+  else
+    user="user1"
+    pass="1234"
   fi
-  cat > "$UNIT" <<'EOF'
+
+  # Ensure nologin shell exists
+  local nologin_shell="/usr/sbin/nologin"
+  [[ -x $nologin_shell ]] || nologin_shell="/sbin/nologin"
+
+  if id -u "$user" >/dev/null 2>&1; then
+    echo "Updating password for existing user '$user'"
+  else
+    echo "Creating proxy auth user '$user'"
+    useradd -M -s "$nologin_shell" "$user" || true
+  fi
+  echo "$user:$pass" | chpasswd
+
+  PROXY_AUTH_USER="$user"
+  PROXY_AUTH_PASS="$pass"
+}
+
+ensure_unit() {
+ # Many distros install a unit already; only write our own if missing.
+ if systemctl list-unit-files | grep -q '^danted\.service'; then
+   return 0
+ fi
+ cat > "$UNIT" <<'EOF'
 [Unit]
 Description=SOCKS (v4 and v5) proxy daemon (danted)
 Documentation=man:danted(8) man:danted.conf(5)
@@ -205,12 +225,12 @@ Type=simple
 PIDFile=/run/danted.pid
 ExecStart=/usr/sbin/danted
 ExecStartPre=/bin/sh -c ' \
-        uid=`sed -n -e "s/[[:space:]]//g" -e "s/#.*//" -e "/^user\\.privileged/{s/[^:]*://p;q;}" /etc/danted.conf`; \
-        if [ -n "$uid" ]; then \
-                touch /var/run/danted.pid; \
-                chown $uid /var/run/danted.pid; \
-        fi \
-        '
+       uid=`sed -n -e "s/[[:space:]]//g" -e "s/#.*//" -e "/^user\\.privileged/{s/[^:]*://p;q;}" /etc/danted.conf`; \
+       if [ -n "$uid" ]; then \
+               touch /var/run/danted.pid; \
+               chown $uid /var/run/danted.pid; \
+       fi \
+       '
 PrivateTmp=yes
 InaccessibleDirectories=/boot /home /media /mnt /opt /root
 ReadOnlyDirectories=/bin /etc /lib -/lib64 /sbin /usr /var
@@ -219,117 +239,120 @@ DeviceAllow=/dev/null rw
 [Install]
 WantedBy=multi-user.target
 EOF
-  systemctl daemon-reload
+ systemctl daemon-reload
 }
 
 configure_firewall() {
-  # Open TCP ${PORT} from allowed subnets only
-  if cmd_exists ufw; then
-    if ! ufw status | grep -q "Status: active"; then
-      echo "ufw not active; skipping ufw configuration"
-    else
-      for subnet in "${ALLOWED_CLIENTS[@]}"; do
-        ufw allow from "$subnet" to any port "$PORT" proto tcp || true
-      done
-    fi
-  elif cmd_exists firewall-cmd; then
-    local changed=0
-    for subnet in "${ALLOWED_CLIENTS[@]}"; do
-      firewall-cmd --permanent --add-rich-rule="rule family=ipv4 source address=${subnet} port protocol=tcp port=${PORT} accept" && changed=1 || true
-    done
-    if [[ $changed -eq 1 ]]; then
-      firewall-cmd --reload || true
-    fi
-  else
-    echo "No supported firewall (ufw/firewalld) detected; skipping firewall config. Ensure port ${PORT}/tcp is permitted from allowed subnets."
-  fi
+ # Open TCP ${PORT} from allowed subnets only
+ if cmd_exists ufw; then
+   if ! ufw status | grep -q "Status: active"; then
+     echo "ufw not active; skipping ufw configuration"
+   else
+     for subnet in "${ALLOWED_CLIENTS[@]}"; do
+       ufw allow from "$subnet" to any port "$PORT" proto tcp || true
+     done
+   fi
+ elif cmd_exists firewall-cmd; then
+   local changed=0
+   for subnet in "${ALLOWED_CLIENTS[@]}"; do
+     firewall-cmd --permanent --add-rich-rule="rule family=ipv4 source address=${subnet} port protocol=tcp port=${PORT} accept" && changed=1 || true
+   done
+   if [[ $changed -eq 1 ]]; then
+     firewall-cmd --reload || true
+   fi
+ else
+   echo "No supported firewall (ufw/firewalld) detected; skipping firewall config. Ensure port ${PORT}/tcp is permitted from allowed subnets."
+ fi
 }
 
 validate_ip_presence() {
-  if [[ -z "$REQUIRED_IP" ]]; then
-    # No specific IP requested; skipping presence validation
-    return 0
-  fi
-  if ip -o addr show | grep -q "${REQUIRED_IP}\\b"; then
-    echo "Confirmed: host has IP ${REQUIRED_IP} configured."
-  else
-    echo "WARNING: ${REQUIRED_IP} not found on any interface. Proceeding with default interface; confirm networking is correct." >&2
-  fi
+ if [[ -z "$REQUIRED_IP" ]]; then
+   # No specific IP requested; skipping presence validation
+   return 0
+ fi
+ if ip -o addr show | grep -q "${REQUIRED_IP}\\b"; then
+   echo "Confirmed: host has IP ${REQUIRED_IP} configured."
+ else
+   echo "WARNING: ${REQUIRED_IP} not found on any interface. Proceeding with default interface; confirm networking is correct." >&2
+ fi
 }
 
 start_enable_service() {
-  systemctl enable danted || true
-  systemctl restart danted
-  sleep 1
-  systemctl --no-pager --full status danted || true
-  ss -lntp | grep ":${PORT} " || netstat -lntp 2>/dev/null | grep ":${PORT} " || true
+ systemctl enable danted || true
+ systemctl restart danted
+ sleep 1
+ systemctl --no-pager --full status danted || true
+ ss -lntp | grep ":${PORT} " || netstat -lntp 2>/dev/null | grep ":${PORT} " || true
 }
 
 main() {
-  need_root
-  # Ensure basic tools for detection/tests
-  ensure_utils
-  # Auto-detect public IPv4 if REQUIRED_IP not explicitly set
-  local detected_ip=""
-  detected_ip=$(detect_public_ip || true)
-  if [[ -n "$detected_ip" ]]; then
-    if [[ -z "$REQUIRED_IP" ]]; then
-      REQUIRED_IP="$detected_ip"
-    fi
-  fi
-  # Interactive prompt only for allowed clients (if TTY)
-  if [[ -t 0 && -t 1 ]]; then
-    echo "Enter allowed client subnets as a comma-separated list (e.g., 37.111.0.0/16, 103.112.0.0/16)."
-    echo "Press Enter to keep defaults."
-    read -r -p "Allowed clients: " _acl || true
-    if [[ -n "${_acl:-}" ]]; then
-      ALLOWED_CLIENTS=()
-      IFS=',' read -r -a _arr <<< "${_acl}"
-      for item in "${_arr[@]}"; do
-        _t=$(echo "$item" | sed 's/^ *//;s/ *$//')
-        [[ -n "$_t" ]] && ALLOWED_CLIENTS+=("$_t")
-      done
-    fi
-  fi
-  validate_ip_presence
-  install_dante
-  local iface
-  iface=$(get_iface)
-  echo "Using interface: ${iface}"
-  # Expand ACLs for local verification
-  local srv_ip_for_bind
-  srv_ip_for_bind=$(get_primary_ip_for_iface "$iface")
-  if [[ -n "$srv_ip_for_bind" ]]; then
-    case " ${ALLOWED_CLIENTS[*]} " in
-      *" 127.0.0.1/32 "*) :;;
-      *) ALLOWED_CLIENTS+=("127.0.0.1/32");;
-    esac
-    case " ${ALLOWED_CLIENTS[*]} " in
-      *" ${srv_ip_for_bind}/32 "*) :;;
-      *) ALLOWED_CLIENTS+=("${srv_ip_for_bind}/32");;
-    esac
-  fi
-  write_config "$iface"
-  ensure_unit
-  configure_firewall
-  start_enable_service
-  echo
-  echo "Setup complete. Dante is configured on interface '${iface}' listening on TCP ${PORT}."
-  echo "Config file: ${CONF}"
-  echo "Service: danted (systemd)"
-  # Connectivity test
-  local target_ip
-  target_ip="$srv_ip_for_bind"
-  if [[ -n "$target_ip" ]] && cmd_exists curl; then
-    echo "Testing SOCKS5 connectivity via ${target_ip}:${PORT} (https://ifconfig.me) ..."
-    if curl -sS --max-time 15 --socks5-hostname "${target_ip}:${PORT}" https://ifconfig.me >/dev/null; then
-      echo "Connectivity test: SUCCESS"
-    else
-      echo "Connectivity test: FAILED (check firewall/ACLs/logs)" >&2
-    fi
-  else
-    echo "Skipping connectivity test (no curl or no detected bind IP)."
-  fi
+ need_root
+ # Ensure basic tools for detection/tests
+ ensure_utils
+ # Auto-detect public IPv4 if REQUIRED_IP not explicitly set
+ local detected_ip=""
+ detected_ip=$(detect_public_ip || true)
+ if [[ -n "$detected_ip" ]]; then
+   if [[ -z "$REQUIRED_IP" ]]; then
+     REQUIRED_IP="$detected_ip"
+   fi
+ fi
+ # Interactive prompt only for allowed clients (if TTY)
+ if [[ -t 0 && -t 1 ]]; then
+   echo "Enter allowed client subnets as a comma-separated list (e.g., 37.111.0.0/16, 103.112.0.0/16)."
+   echo "Press Enter to keep defaults."
+   read -r -p "Allowed clients: " _acl || true
+   if [[ -n "${_acl:-}" ]]; then
+     ALLOWED_CLIENTS=()
+     IFS=',' read -r -a _arr <<< "${_acl}"
+     for item in "${_arr[@]}"; do
+       _t=$(echo "$item" | sed 's/^ *//;s/ *$//')
+       [[ -n "$_t" ]] && ALLOWED_CLIENTS+=("$_t")
+     done
+   fi
+ fi
+ validate_ip_presence
+ install_dante
+ # Setup proxy username/password auth
+ create_proxy_user
+ local iface
+ iface=$(get_iface)
+ echo "Using interface: ${iface}"
+ # Expand ACLs for local verification
+ local srv_ip_for_bind
+ srv_ip_for_bind=$(get_primary_ip_for_iface "$iface")
+ if [[ -n "$srv_ip_for_bind" ]]; then
+   case " ${ALLOWED_CLIENTS[*]} " in
+     *" 127.0.0.1/32 "*) :;;
+     *) ALLOWED_CLIENTS+=("127.0.0.1/32");;
+   esac
+   case " ${ALLOWED_CLIENTS[*]} " in
+     *" ${srv_ip_for_bind}/32 "*) :;;
+     *) ALLOWED_CLIENTS+=("${srv_ip_for_bind}/32");;
+   esac
+ fi
+ write_config "$iface"
+ ensure_unit
+ configure_firewall
+ start_enable_service
+ echo
+ echo "Setup complete. Dante is configured on interface '${iface}' listening on TCP ${PORT}."
+ echo "Config file: ${CONF}"
+ echo "Service: danted (systemd)"
+ # Connectivity test
+ local target_ip
+ target_ip="${REQUIRED_IP:-$srv_ip_for_bind}"
+ if [[ -n "$target_ip" ]] && cmd_exists curl; then
+   echo "Testing authenticated SOCKS5 connectivity via ${target_ip}:${PORT} (https://api.ipify.org) ..."
+   if curl -sS --max-time 20 -x "socks5h://${PROXY_AUTH_USER}:${PROXY_AUTH_PASS}@${target_ip}:${PORT}" https://api.ipify.org >/dev/null; then
+     echo "Connectivity test: SUCCESS"
+     echo "Example command: curl -x socks5h://${PROXY_AUTH_USER}:${PROXY_AUTH_PASS}@${target_ip}:${PORT} https://api.ipify.org"
+   else
+     echo "Connectivity test: FAILED (check firewall/ACLs/logs)" >&2
+   fi
+ else
+   echo "Skipping connectivity test (no curl or no detected bind IP)."
+ fi
 }
 
 main "$@"
