@@ -57,5 +57,13 @@ The Flask session secret is managed in code (can be overridden via `DANTE_UI_SEC
 - Flask version is pinned in `webui/requirements.txt`. The UI server code lives in `webui/app.py`.
 - Static assets and templates are under `webui/static/` and `webui/templates/`.
 
+## Screenshots
+
+### Add new subnet
+![Add new subnet](webui/.asset/add_new_subnet.png)
+
+### Deployment result
+![Deployment result](webui/.asset/result.png)
+
 ## License
 MIT
