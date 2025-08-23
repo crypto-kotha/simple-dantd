@@ -30,6 +30,10 @@ Manage your Dante SOCKS5 proxy with a clean, modern web interface.
 
 <p/>
 
+<img alt="Subnet table" src="webui/.asset/subnet.png" width="85%" />
+
+<p/>
+
 <img alt="Deployment result" src="webui/.asset/result.png" width="85%" />
 
 </div>
