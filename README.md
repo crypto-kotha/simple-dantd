@@ -1,80 +1,61 @@
-# Dante (danted) SOCKS5 Proxy – Auto Setup Script
+# simple-dantd
 
-Automated installer for the Dante (danted) SOCKS5 proxy. It auto-detects the server IP and interface, configures secure IP allowlists, sets up a systemd service, and verifies connectivity.
+A simple web UI to configure and manage a Dante SOCKS5 proxy (danted). It lets you:
+- Manage allowed client subnets
+- Create/update system users for proxy auth
+- Write danted.conf safely
+- Restart the service and test connectivity per user
 
-## Features
-* **Auto-detect IP/interface**: Finds the public IPv4 and the correct NIC automatically.
-* **Single prompt**: Only asks for allowed client subnets (comma-separated). Press Enter to keep defaults.
-* **No-auth SOCKS by default**: `socksmethod: none` and `clientmethod: none` — access is restricted by IP allowlists and firewall rules.
-* **Firewall integration**: Configures ufw or firewalld (if present) to allow TCP 1080 only from allowed subnets.
-* **Systemd service**: Ensures, enables, and starts `danted`.
-* **Modern config**: Uses `socksmethod`/`clientmethod` (no deprecated `method`).
+## Prerequisites
+- Linux with sudo access
+- Dante server (danted) installed via your package manager
+- Python 3.11+ (virtualenv is created by `run.sh`)
 
-## Supported
-* Debian/Ubuntu (apt)
-* RHEL/CentOS/Rocky/Alma (yum/dnf)
-* Systemd-based systems
+## Quick Start
+1) Clone the repo
 
-## Requirements
-* Run as `root` (or with `sudo`).
-* Internet access (to install packages and to run the connectivity test).
-
-## Quick start
-```bash
-# 1) Copy to the server (example)
-scp -o StrictHostKeyChecking=no -P 22 -r danted-setup/ root@<SERVER_IP>:/root/
-
-# 2) SSH to the server
-ssh -p 22 root@<SERVER_IP>
-
-# 3) Install and configure
-cd /root/danted-setup
-chmod +x setup.sh
-sudo ./setup.sh
+2) Create your `.env` from the example and set admin login credentials for the UI:
+```
+cp .env.example .env
+# edit values
+ADMIN_USER=admin
+ADMIN_PASS=admin
 ```
 
-During the run, you will be asked once for allowed client subnets. Provide a comma-separated list like:
+3) Run the UI:
 ```
-37.111.0.0/16, 103.112.0.0/16, 182.160.0.0/16
+bash ./run.sh
 ```
+This will:
+- Ensure `127.0.0.50` is bound to loopback
+- Create and activate a virtualenv `.venv/`
+- Install dependencies
+- Start the Flask UI at http://127.0.0.50:7000
 
-The generated config uses `socksmethod: none` and `clientmethod: none`. Access is controlled by IP allowlists and firewall rules.
+4) Login using the admin credentials you set in `.env`.
 
-## Verify on the server
-```bash
-systemctl status danted --no-pager
-journalctl -u danted -e --no-pager
-ss -lntp | grep ":1080 " || netstat -lntp | grep ":1080 "
-```
+## Using the UI
+- Add rows for: subnet, user, password
+- Click "Save and Deploy"
+- You will be prompted for your sudo password (needed to write config, create users, restart service)
+- After deploy, the UI tests connectivity per user and shows a sample curl command
 
-## Use from a client
-Test from an allowed client (replace SERVER_IP):
-```bash
-curl -v --max-time 15 --socks5-hostname <SERVER_IP>:1080 https://ifconfig.me
-```
+## Environment Variables
+The UI reads these from the `.env` file:
+- `ADMIN_USER` - UI login username
+- `ADMIN_PASS` - UI login password
 
-## Troubleshooting
-* __Timeout / connection refused__
-  - Ensure your client public IP is in the allowed subnets and firewall permits TCP 1080.
-* __No authentication method was acceptable__
-  - Confirm `/etc/danted.conf` contains `socksmethod: none` and restart: `sudo systemctl restart danted`.
-* __Check logs__
-  ```bash
-  journalctl -u danted -f --no-pager
-  ```
+The Flask session secret is managed in code (can be overridden via `DANTE_UI_SECRET` environment variable if you need to change it in an environment, but it is not read from `.env` by default).
 
-## Uninstall / revert
-```bash
-systemctl disable --now danted || true
-rm -f /etc/systemd/system/danted.service
-systemctl daemon-reload
-rm -f /etc/danted.conf
-# Optionally remove package
-apt-get remove -y dante-server danted 2>/dev/null || dnf remove -y dante-server danted 2>/dev/null || yum remove -y dante-server danted 2>/dev/null || true
-```
+## Important Notes
+- The app writes state to `/etc/dante-ui.json` and manages `danted.conf` at `/etc/danted.conf`.
+- The managed Linux group is `danteproxy` and proxy users are added to it.
+- Default proxy port is `1080`.
+- Network/service operations require sudo.
+
+## Development
+- Flask version is pinned in `webui/requirements.txt`. The UI server code lives in `webui/app.py`.
+- Static assets and templates are under `webui/static/` and `webui/templates/`.
 
 ## License
 MIT
-
-## Disclaimer
-Exposing a proxy to the internet can be risky. Keep your allowlists narrow and your firewalls strict. Change defaults if your security policy requires user authentication.

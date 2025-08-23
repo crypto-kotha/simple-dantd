@@ -1,0 +1,264 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Dante SOCKS5 Management</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+  <div class="container">
+    <h1>🔐 Dante SOCKS5 Management</h1>
+
+    <div class="topbar">
+      <div class="inline">
+        <span style="color: #4a5568; font-weight: 500;"></span>
+      </div>
+      <div class="inline">
+        <a href="/logout" class="link">Logout</a>
+      </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="flashes">
+          {% for category, message in messages %}
+            <li class="{{ category }}">{{ message }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <h2>📋 Existing IP Ranges</h2>
+    
+    <form method="post" action="/save" id="mainForm">
+      <div style="margin: 20px 0; padding: 20px; background: rgba(255,255,255,0.8); border-radius: 12px;">
+        <button type="button" class="primary" onclick="addRow()" style="margin-right: 10px;">
+          ➕ Add New Entry
+        </button>
+        <button type="button" class="secondary" onclick="clearAll()" style="background: linear-gradient(135deg, #a0aec0, #718096);">
+          🗑️ Clear All
+        </button>
+      </div>
+
+      <div class="table-container">
+        <table id="rowsTable">
+          <thead>
+            <tr>
+              <th style="width: 60px;">#</th>
+              <th style="width: 25%;">🌐 Subnet</th>
+              <th style="width: 20%;">👤 User</th>
+              <th style="width: 20%;">🔑 Password</th>
+              <th style="width: 15%;">⚡ Action</th>
+            </tr>
+          </thead>
+          <tbody id="rowsBody">
+            {% for entry in entries %}
+            <tr>
+              <td class="row-index">{{ loop.index }}</td>
+              <td><input name="row[{{ loop.index }}][ip]" value="{{ entry.subnet }}" placeholder="e.g., 192.168.1.0/24"></td>
+              <td><input name="row[{{ loop.index }}][user]" value="{{ entry.user }}" placeholder="username"></td>
+              <td><input name="row[{{ loop.index }}][pass]" value="{{ entry.password }}" placeholder="password" type="password"></td>
+              <td>
+                <button type="button" class="danger" onclick="deleteRow(this)">🗑️ Delete</button>
+              </td>
+            </tr>
+            {% endfor %}
+            {% if not entries %}
+            <tr>
+              <td colspan="5" style="text-align: center; color: #a0aec0; font-style: italic; padding: 40px;">
+                No entries configured. Click "Add New Entry" to get started.
+              </td>
+            </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+
+      <div style="margin-top: 30px; text-align: center; padding: 20px; background: rgba(255,255,255,0.8); border-radius: 12px;">
+        <button type="submit" class="primary" id="saveBtn" style="font-size: 16px; padding: 15px 30px;">
+          🚀 Save and Deploy
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    let rowCounter = parseInt('{{ entries|length if entries else 0 }}');
+
+    function renumber() {
+      const rows = document.querySelectorAll('#rowsBody tr');
+      rows.forEach((tr, i) => {
+        if (tr.cells.length === 1) return; // Skip empty state row
+        const idx = i + 1;
+        tr.querySelector('.row-index').textContent = idx;
+        tr.querySelectorAll('input').forEach(inp => {
+          const field = inp.name.includes('[user]') ? 'user' : (inp.name.includes('[pass]') ? 'pass' : 'ip');
+          inp.name = `row[${idx}][${field}]`;
+        });
+      });
+    }
+
+    function addRow() {
+      const body = document.getElementById('rowsBody');
+      
+      // Remove empty state if present
+      const emptyRow = body.querySelector('td[colspan="5"]');
+      if (emptyRow) {
+        emptyRow.closest('tr').remove();
+      }
+      
+      rowCounter++;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="row-index">${rowCounter}</td>
+        <td><input name="row[${rowCounter}][ip]" placeholder="e.g., 192.168.1.0/24"></td>
+        <td><input name="row[${rowCounter}][user]" placeholder="username"></td>
+        <td><input name="row[${rowCounter}][pass]" placeholder="password" type="password"></td>
+        <td>
+          <button type="button" class="danger" onclick="deleteRow(this)">🗑️ Delete</button>
+        </td>
+      `;
+      body.appendChild(tr);
+      renumber();
+      
+      // Focus on the new subnet input
+      tr.querySelector('input').focus();
+    }
+
+    function deleteRow(btn) {
+      const tr = btn.closest('tr');
+      tr.remove();
+      renumber();
+      
+      // Add empty state if no rows left
+      const body = document.getElementById('rowsBody');
+      if (body.children.length === 0) {
+        body.innerHTML = `
+          <tr>
+            <td colspan="5" style="text-align: center; color: #a0aec0; font-style: italic; padding: 40px;">
+              No entries configured. Click "Add New Entry" to get started.
+            </td>
+          </tr>
+        `;
+      }
+    }
+
+    function editRow(btn) {
+      const tr = btn.closest('tr');
+      const inputs = tr.querySelectorAll('input');
+      inputs[0].focus();
+    }
+
+    function duplicateRow(btn) {
+      const tr = btn.closest('tr');
+      const inputs = tr.querySelectorAll('input');
+      
+      addRow();
+      
+      // Copy values to new row
+      const newRow = document.querySelector('#rowsBody tr:last-child');
+      const newInputs = newRow.querySelectorAll('input');
+      inputs.forEach((input, i) => {
+        if (newInputs[i]) {
+          newInputs[i].value = input.value;
+        }
+      });
+    }
+
+    function clearAll() {
+      if (confirm('Are you sure you want to clear all entries? This action cannot be undone.')) {
+        const body = document.getElementById('rowsBody');
+        body.innerHTML = `
+          <tr>
+            <td colspan="5" style="text-align: center; color: #a0aec0; font-style: italic; padding: 40px;">
+              No entries configured. Click "Add New Entry" to get started.
+            </td>
+          </tr>
+        `;
+        rowCounter = 0;
+      }
+    }
+
+    // Form submission with loading state and sudo password modal
+    document.getElementById('mainForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      
+      // Show sudo password modal
+      showSudoModal(() => {
+        const saveBtn = document.getElementById('saveBtn');
+        saveBtn.innerHTML = '<span class="spinner"></span> Deploying...';
+        saveBtn.disabled = true;
+        document.body.classList.add('loading');
+        
+        // Submit form with password
+        document.getElementById('mainForm').submit();
+      });
+    });
+
+    function showSudoModal(callback) {
+      const modal = document.createElement('div');
+      modal.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+        background: rgba(0,0,0,0.5); display: flex; align-items: center; 
+        justify-content: center; z-index: 10000;
+      `;
+      
+      modal.innerHTML = `
+        <div style="background: white; padding: 30px; border-radius: 12px; max-width: 400px; width: 90%;">
+          <h3 style="margin: 0 0 20px 0; color: #4a5568;">🔐 System Authentication Required</h3>
+          <p style="margin: 0 0 20px 0; color: #718096;">Enter your sudo password to perform system operations:</p>
+          <input type="password" id="modalPassword" placeholder="Sudo password" style="width: 100%; margin-bottom: 20px;">
+          <div style="text-align: right;">
+            <button onclick="closeSudoModal()" style="margin-right: 10px; background: #a0aec0;">Cancel</button>
+            <button onclick="submitWithPassword()" class="primary">Continue</button>
+          </div>
+        </div>
+      `;
+      
+      document.body.appendChild(modal);
+      document.getElementById('modalPassword').focus();
+      
+      window.closeSudoModal = () => {
+        document.body.removeChild(modal);
+      };
+      
+      window.submitWithPassword = () => {
+        const password = document.getElementById('modalPassword').value;
+        if (!password) {
+          alert('Password is required');
+          return;
+        }
+        
+        // Add password to form
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = 'sudo_password';
+        hiddenInput.value = password;
+        document.getElementById('mainForm').appendChild(hiddenInput);
+        
+        document.body.removeChild(modal);
+        callback();
+      };
+      
+      // Enter key support
+      document.getElementById('modalPassword').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+          window.submitWithPassword();
+        }
+      });
+    }
+
+    // Add keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+      if (e.ctrlKey && e.key === 'Enter') {
+        document.getElementById('mainForm').submit();
+      }
+      if (e.ctrlKey && e.key === 'n') {
+        e.preventDefault();
+        addRow();
+      }
+    });
+  </script>
+</body>
+</html>

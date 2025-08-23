@@ -9,12 +9,6 @@ CONF="/etc/danted.conf"
 UNIT="/etc/systemd/system/danted.service"
 
 ALLOWED_CLIENTS=(
-  "37.111.0.0/16"
-  "103.112.0.0/16"
-  "182.160.0.0/16"
-  "103.189.237.0/16"
-  "103.228.38.0/16"
-  "163.223.0.0/16"
 )
 
 need_root() {
