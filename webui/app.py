@@ -11,8 +11,9 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from dotenv import load_dotenv
 load_dotenv()
 
-APP_HOST = "127.0.0.50"
-APP_PORT = 7000
+# Allow host/port override from environment to support external access when desired
+APP_HOST = os.environ.get("APP_HOST", "127.0.0.50")
+APP_PORT = int(os.environ.get("APP_PORT", 7000))
 CONF = "/etc/danted.conf"
 STATE_FILE = "/etc/dante-ui.json"
 MANAGED_GROUP = "danteproxy"
