@@ -51,6 +51,11 @@ Manage your Dante SOCKS5 proxy with a clean, modern web interface.
 
 1) Clone the repo
 
+```bash
+git clone https://github.com/mdnaimul22/simple-dantd.git
+cd simple-dantd
+```
+
 2) Create your `.env` and set admin credentials for the UI:
 
 ```bash
