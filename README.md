@@ -8,7 +8,7 @@ Manage your Dante SOCKS5 proxy with a clean, modern web interface.
   <a href="https://github.com/mdnaimul22/simple-dantd"><img alt="Repo" src="https://img.shields.io/badge/GitHub-simple--dantd-181717?logo=github"></a>
   <img alt="Python" src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white">
   <img alt="Flask" src="https://img.shields.io/badge/Flask-3.0-000000?logo=flask&logoColor=white">
-  <img alt="License" src="https://img.shields.io/badge/License-MIT-2ea44f">
+  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT-2ea44f"></a>
 </p>
 
 <p>
@@ -132,4 +132,4 @@ simple-dantd/
 
 ## License
 
-MIT
+This project is licensed under the MIT License — see the [LICENSE](./LICENSE) file for details.
